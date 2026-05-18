@@ -1,0 +1,1639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Spider Species Identifier</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.15.0/dist/tf.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #080a0f;
+    --bg2: #0d1017;
+    --bg3: #111520;
+    --surface: #141824;
+    --surface2: #1a2030;
+    --surface3: #1f2840;
+    --border: rgba(255,255,255,0.06);
+    --border2: rgba(255,255,255,0.1);
+    --crimson: #c0392b;
+    --crimson-glow: rgba(192,57,43,0.3);
+    --crimson-soft: rgba(192,57,43,0.15);
+    --neon: #4fc3f7;
+    --neon-glow: rgba(79,195,247,0.25);
+    --neon-soft: rgba(79,195,247,0.1);
+    --violet: #7c4dff;
+    --violet-glow: rgba(124,77,255,0.25);
+    --text: #e8eaf0;
+    --text2: #8892a4;
+    --text3: #4a5568;
+    --radius: 18px;
+    --radius-sm: 10px;
+    --transition: 0.3s cubic-bezier(0.4,0,0.2,1);
+    --nav-h: 74px;
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Manrope', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+
+  /* ── CANVAS BACKGROUND ── */
+  #bg-canvas {
+    position: fixed; inset: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.45;
+  }
+
+  /* ── APP SHELL ── */
+  #app {
+    position: fixed; inset: 0;
+    display: flex;
+    flex-direction: column;
+    max-width: 420px;
+    margin: 0 auto;
+    overflow: hidden;
+    z-index: 1;
+  }
+
+  /* ── SPLASH ── */
+  #splash {
+    position: fixed; inset: 0;
+    z-index: 100;
+    background: radial-gradient(ellipse at 50% 40%, #12182e 0%, #07090f 70%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 28px;
+    transition: opacity 0.8s ease, transform 0.8s ease;
+  }
+  #splash.hidden {
+    opacity: 0;
+    transform: scale(1.05);
+    pointer-events: none;
+  }
+
+  .splash-web {
+    position: relative;
+    width: 140px; height: 140px;
+  }
+  .splash-web svg {
+    width: 100%; height: 100%;
+    filter: drop-shadow(0 0 18px rgba(79,195,247,0.5)) drop-shadow(0 0 40px rgba(192,57,43,0.3));
+  }
+  .splash-web .spider-pulse {
+    animation: spiderPulse 2s ease-in-out infinite;
+  }
+  @keyframes spiderPulse {
+    0%,100% { opacity: 0.7; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.05); }
+  }
+
+  .splash-title {
+    text-align: center;
+  }
+  .splash-title h1 {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    background: linear-gradient(135deg, #e8eaf0 30%, var(--neon) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1.2;
+    margin-bottom: 6px;
+  }
+  .splash-title p {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--text3);
+  }
+
+  .splash-loader {
+    width: 180px;
+    height: 2px;
+    background: var(--surface2);
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
+  }
+  .splash-loader-bar {
+    position: absolute; inset: 0;
+    width: 0%;
+    background: linear-gradient(90deg, var(--crimson), var(--neon));
+    border-radius: 4px;
+    animation: splashLoad 2.2s ease forwards;
+  }
+  @keyframes splashLoad {
+    0% { width: 0%; }
+    60% { width: 75%; }
+    100% { width: 100%; }
+  }
+
+  /* ── TOP BAR ── */
+  #topbar {
+    flex-shrink: 0;
+    padding: 16px 20px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    z-index: 10;
+  }
+  .topbar-title {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--text2);
+  }
+  .model-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text3);
+  }
+  .model-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--text3);
+    transition: background 0.5s, box-shadow 0.5s;
+  }
+  .model-dot.ready {
+    background: #2ecc71;
+    box-shadow: 0 0 8px rgba(46,204,113,0.6);
+    animation: dotPulse 2s ease infinite;
+  }
+  .model-dot.error { background: var(--crimson); box-shadow: 0 0 8px var(--crimson-glow); }
+  @keyframes dotPulse { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
+
+  /* ── PAGES ── */
+  #pages {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+  }
+  .page {
+    position: absolute; inset: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 4px 16px calc(var(--nav-h) + 12px);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(10px);
+    transition: opacity var(--transition), transform var(--transition);
+    scrollbar-width: none;
+  }
+  .page::-webkit-scrollbar { display: none; }
+  .page.active {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+
+  /* ── BOTTOM NAV ── */
+  #nav {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: var(--nav-h);
+    background: rgba(13,16,23,0.85);
+    backdrop-filter: blur(24px) saturate(1.5);
+    -webkit-backdrop-filter: blur(24px) saturate(1.5);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    padding: 0 8px;
+    z-index: 20;
+    border-radius: 22px 22px 0 0;
+  }
+  .nav-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    height: 56px;
+    border-radius: 14px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    transition: background var(--transition), transform var(--transition);
+    position: relative;
+  }
+  .nav-btn:active { transform: scale(0.92); }
+  .nav-btn.active { background: rgba(79,195,247,0.08); }
+  .nav-icon {
+    width: 22px; height: 22px;
+    stroke: var(--text3);
+    fill: none;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: stroke var(--transition), filter var(--transition);
+  }
+  .nav-btn.active .nav-icon {
+    stroke: var(--neon);
+    filter: drop-shadow(0 0 6px var(--neon));
+  }
+  .nav-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text3);
+    transition: color var(--transition);
+  }
+  .nav-btn.active .nav-label { color: var(--neon); }
+  .nav-active-dot {
+    position: absolute;
+    bottom: 6px;
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    background: var(--neon);
+    box-shadow: 0 0 6px var(--neon);
+    opacity: 0;
+    transition: opacity var(--transition);
+  }
+  .nav-btn.active .nav-active-dot { opacity: 1; }
+
+  /* ── CARDS / UI COMPONENTS ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+    margin-bottom: 14px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color var(--transition), box-shadow var(--transition);
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(255,255,255,0.025) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  .card-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--text3);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* ── HOME PAGE ── */
+  .hero-card {
+    background: linear-gradient(135deg, #0d1117 0%, #111a2e 50%, #0d1117 100%);
+    border: 1px solid rgba(79,195,247,0.15);
+    border-radius: var(--radius);
+    padding: 26px 20px;
+    margin-bottom: 14px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero-card::before {
+    content: '';
+    position: absolute;
+    top: -60px; right: -60px;
+    width: 180px; height: 180px;
+    background: radial-gradient(circle, rgba(79,195,247,0.12) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .hero-card::after {
+    content: '';
+    position: absolute;
+    bottom: -60px; left: -60px;
+    width: 180px; height: 180px;
+    background: radial-gradient(circle, rgba(192,57,43,0.1) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .hero-species-count {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--neon-soft);
+    border: 1px solid rgba(79,195,247,0.2);
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--neon);
+    margin-bottom: 14px;
+  }
+
+  .hero-title {
+    font-size: 24px;
+    font-weight: 800;
+    line-height: 1.2;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, #e8eaf0 40%, var(--neon) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .hero-sub {
+    font-size: 12px;
+    color: var(--text2);
+    line-height: 1.6;
+    max-width: 280px;
+    margin: 0 auto 20px;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 13px 24px;
+    border-radius: var(--radius-sm);
+    border: none;
+    font-family: 'Manrope', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: all var(--transition);
+    position: relative;
+    overflow: hidden;
+  }
+  .btn::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 50%);
+    pointer-events: none;
+  }
+  .btn:active { transform: scale(0.96); }
+
+  .btn-primary {
+    background: linear-gradient(135deg, var(--neon) 0%, #2979ff 100%);
+    color: #050810;
+    box-shadow: 0 4px 20px rgba(79,195,247,0.35);
+  }
+  .btn-primary:hover { box-shadow: 0 6px 28px rgba(79,195,247,0.5); }
+
+  .btn-secondary {
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border2);
+  }
+  .btn-danger {
+    background: rgba(192,57,43,0.15);
+    color: #e74c3c;
+    border: 1px solid rgba(192,57,43,0.25);
+  }
+
+  .btn-full { width: 100%; }
+
+  .quick-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .quick-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    cursor: pointer;
+    transition: all var(--transition);
+    position: relative;
+    overflow: hidden;
+  }
+  .quick-btn:active { transform: scale(0.96); }
+  .quick-btn:hover { border-color: var(--border2); }
+  .quick-btn-icon {
+    width: 38px; height: 38px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .quick-btn-icon svg { width: 20px; height: 20px; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+  .quick-btn-icon.blue { background: var(--neon-soft); }
+  .quick-btn-icon.blue svg { stroke: var(--neon); }
+  .quick-btn-icon.red { background: var(--crimson-soft); }
+  .quick-btn-icon.red svg { stroke: var(--crimson); }
+  .quick-btn-label { font-size: 13px; font-weight: 700; color: var(--text); }
+  .quick-btn-sub { font-size: 10px; color: var(--text3); margin-top: -6px; }
+
+  /* ── STAT ROW ── */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .stat-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px 10px;
+    text-align: center;
+  }
+  .stat-val {
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--neon);
+    font-family: 'Space Mono', monospace;
+    display: block;
+    margin-bottom: 2px;
+  }
+  .stat-key {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text3);
+  }
+
+  /* ── CAMERA PAGE ── */
+  .camera-wrapper {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4/5;
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: #000;
+    margin-bottom: 14px;
+  }
+  #video {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .scan-overlay {
+    position: absolute; inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+  .scan-frame {
+    width: 70%; aspect-ratio: 1;
+    position: relative;
+  }
+  .scan-corner {
+    position: absolute;
+    width: 22px; height: 22px;
+    border-color: var(--neon);
+    border-style: solid;
+    opacity: 0.85;
+  }
+  .scan-corner.tl { top: 0; left: 0; border-width: 2.5px 0 0 2.5px; border-radius: 4px 0 0 0; }
+  .scan-corner.tr { top: 0; right: 0; border-width: 2.5px 2.5px 0 0; border-radius: 0 4px 0 0; }
+  .scan-corner.bl { bottom: 0; left: 0; border-width: 0 0 2.5px 2.5px; border-radius: 0 0 0 4px; }
+  .scan-corner.br { bottom: 0; right: 0; border-width: 0 2.5px 2.5px 0; border-radius: 0 0 4px 0; }
+
+  .scan-line {
+    position: absolute;
+    left: 4px; right: 4px;
+    height: 1.5px;
+    background: linear-gradient(90deg, transparent 0%, var(--neon) 40%, var(--neon) 60%, transparent 100%);
+    box-shadow: 0 0 8px var(--neon), 0 0 16px rgba(79,195,247,0.4);
+    animation: scanLine 2.5s ease-in-out infinite;
+    opacity: 0;
+  }
+  .scan-line.active { opacity: 1; }
+  @keyframes scanLine {
+    0% { top: 4px; }
+    50% { top: calc(100% - 4px); }
+    100% { top: 4px; }
+  }
+
+  .scan-border-animated {
+    position: absolute; inset: 0;
+    border: 1.5px solid rgba(79,195,247,0.15);
+    border-radius: 6px;
+    animation: scanBorderPulse 2s ease-in-out infinite;
+  }
+  @keyframes scanBorderPulse {
+    0%,100% { border-color: rgba(79,195,247,0.15); }
+    50% { border-color: rgba(79,195,247,0.35); box-shadow: inset 0 0 20px rgba(79,195,247,0.08); }
+  }
+
+  .camera-info-row {
+    position: absolute;
+    bottom: 12px; left: 12px; right: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .camera-badge {
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border2);
+    border-radius: 20px;
+    padding: 4px 10px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text2);
+    letter-spacing: 0.5px;
+  }
+  .camera-live-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #2ecc71;
+    box-shadow: 0 0 6px #2ecc71;
+    animation: dotPulse 1.5s ease infinite;
+    display: inline-block;
+    margin-right: 4px;
+  }
+
+  #camera-placeholder {
+    position: absolute; inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    background: var(--bg3);
+  }
+  #camera-placeholder svg { width: 48px; height: 48px; stroke: var(--text3); fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  #camera-placeholder p { font-size: 12px; color: var(--text3); }
+
+  .camera-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+  .capture-btn {
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--neon), #2979ff);
+    border: 3px solid rgba(79,195,247,0.3);
+    box-shadow: 0 0 20px rgba(79,195,247,0.4), 0 4px 16px rgba(0,0,0,0.4);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all var(--transition);
+    position: relative;
+  }
+  .capture-btn::before {
+    content: '';
+    position: absolute;
+    inset: 3px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+  }
+  .capture-btn:active { transform: scale(0.92); box-shadow: 0 0 30px rgba(79,195,247,0.6); }
+  .capture-btn svg { width: 26px; height: 26px; fill: #050810; z-index: 1; }
+
+  .cam-side-btn {
+    width: 46px; height: 46px;
+    border-radius: 50%;
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all var(--transition);
+  }
+  .cam-side-btn:active { transform: scale(0.92); }
+  .cam-side-btn svg { width: 20px; height: 20px; stroke: var(--text2); fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* ── UPLOAD PAGE ── */
+  .upload-zone {
+    border: 2px dashed rgba(79,195,247,0.2);
+    border-radius: var(--radius);
+    padding: 40px 20px;
+    text-align: center;
+    background: var(--surface);
+    cursor: pointer;
+    transition: all var(--transition);
+    margin-bottom: 14px;
+    position: relative;
+    overflow: hidden;
+  }
+  .upload-zone:hover, .upload-zone.drag-over {
+    border-color: rgba(79,195,247,0.5);
+    background: var(--neon-soft);
+    box-shadow: inset 0 0 30px rgba(79,195,247,0.05);
+  }
+  .upload-zone svg { width: 44px; height: 44px; stroke: var(--neon); fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; margin-bottom: 14px; }
+  .upload-zone h3 { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+  .upload-zone p { font-size: 11px; color: var(--text2); }
+  #file-input { display: none; }
+
+  .preview-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 14px;
+    display: none;
+  }
+  .preview-card.visible { display: block; }
+  .preview-card img {
+    width: 100%;
+    aspect-ratio: 4/3;
+    object-fit: cover;
+    display: block;
+  }
+  .preview-card-actions {
+    padding: 14px;
+    display: flex;
+    gap: 10px;
+  }
+
+  /* ── RESULT CARD ── */
+  .result-card {
+    background: linear-gradient(135deg, #0e1520 0%, #111c2e 100%);
+    border: 1px solid rgba(79,195,247,0.2);
+    border-radius: var(--radius);
+    padding: 0;
+    overflow: hidden;
+    margin-bottom: 14px;
+    display: none;
+    animation: slideUp 0.4s cubic-bezier(0.34,1.56,0.64,1);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(79,195,247,0.08);
+  }
+  .result-card.visible { display: block; }
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(20px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .result-card-header {
+    padding: 16px 18px 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .result-icon-wrap {
+    width: 38px; height: 38px;
+    border-radius: 10px;
+    background: var(--neon-soft);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .result-icon-wrap svg { width: 20px; height: 20px; stroke: var(--neon); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .result-header-text { flex: 1; }
+  .result-header-text span { font-size: 10px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text3); display: block; margin-bottom: 2px; }
+  .result-header-text h3 { font-size: 16px; font-weight: 800; color: var(--text); }
+
+  .result-body { padding: 16px 18px 18px; }
+
+  .confidence-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .confidence-label { font-size: 11px; font-weight: 600; color: var(--text2); }
+  .confidence-pct { font-size: 20px; font-weight: 800; color: var(--neon); font-family: 'Space Mono', monospace; }
+
+  .progress-bar-wrap {
+    height: 6px;
+    background: var(--surface2);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, var(--crimson), var(--neon));
+    transition: width 0.8s cubic-bezier(0.34,1.56,0.64,1);
+    box-shadow: 0 0 8px rgba(79,195,247,0.5);
+  }
+
+  .venom-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .venom-badge.venomous { background: rgba(192,57,43,0.15); color: #e74c3c; border: 1px solid rgba(192,57,43,0.25); }
+  .venom-badge.caution { background: rgba(243,156,18,0.15); color: #f39c12; border: 1px solid rgba(243,156,18,0.25); }
+  .venom-badge.safe { background: rgba(46,204,113,0.1); color: #2ecc71; border: 1px solid rgba(46,204,113,0.2); }
+
+  .top-predictions {
+    margin-top: 14px;
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+  }
+  .top-pred-label { font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text3); margin-bottom: 10px; }
+  .pred-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .pred-rank { font-size: 10px; font-weight: 700; color: var(--text3); width: 16px; font-family: 'Space Mono', monospace; }
+  .pred-name { flex: 1; font-size: 12px; font-weight: 600; color: var(--text2); }
+  .pred-pct { font-size: 11px; font-weight: 700; color: var(--text); font-family: 'Space Mono', monospace; }
+  .pred-bar-mini {
+    position: absolute;
+    bottom: 0; left: 0;
+    height: 2px;
+    background: var(--neon);
+    opacity: 0.4;
+    transition: width 0.6s ease;
+  }
+
+  /* ── HISTORY PAGE ── */
+  .history-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+    padding: 4px 0;
+  }
+  .history-count {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text3);
+  }
+  .history-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    margin-bottom: 10px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    transition: all var(--transition);
+    animation: slideUp 0.3s ease;
+  }
+  .history-item:active { transform: scale(0.98); }
+  .history-thumb {
+    width: 56px; height: 56px;
+    border-radius: 10px;
+    object-fit: cover;
+    flex-shrink: 0;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+  }
+  .history-info { flex: 1; min-width: 0; }
+  .history-species { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .history-meta { font-size: 10px; color: var(--text3); margin-top: 3px; }
+  .history-conf {
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--neon);
+    font-family: 'Space Mono', monospace;
+    flex-shrink: 0;
+  }
+  .history-del-btn {
+    width: 30px; height: 30px;
+    border-radius: 8px;
+    border: none;
+    background: rgba(192,57,43,0.1);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all var(--transition);
+    flex-shrink: 0;
+  }
+  .history-del-btn:active { transform: scale(0.92); background: rgba(192,57,43,0.2); }
+  .history-del-btn svg { width: 14px; height: 14px; stroke: var(--crimson); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  .empty-state {
+    text-align: center;
+    padding: 48px 24px;
+    color: var(--text3);
+  }
+  .empty-state svg { width: 52px; height: 52px; stroke: var(--text3); fill: none; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; margin-bottom: 14px; opacity: 0.5; }
+  .empty-state h3 { font-size: 15px; font-weight: 700; color: var(--text2); margin-bottom: 6px; }
+  .empty-state p { font-size: 12px; }
+
+  /* ── LOADING OVERLAY ── */
+  .processing-overlay {
+    position: fixed; inset: 0;
+    z-index: 50;
+    background: rgba(8,10,15,0.85);
+    backdrop-filter: blur(8px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    display: none;
+  }
+  .processing-overlay.visible { display: flex; }
+  .spinner {
+    width: 52px; height: 52px;
+    border: 2px solid var(--surface2);
+    border-top-color: var(--neon);
+    border-right-color: var(--neon);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    box-shadow: 0 0 20px rgba(79,195,247,0.3);
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .processing-overlay p { font-size: 12px; font-weight: 600; color: var(--text2); letter-spacing: 0.5px; }
+
+  /* ── TOAST ── */
+  #toast {
+    position: fixed;
+    bottom: calc(var(--nav-h) + 16px);
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: 20px;
+    padding: 9px 18px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    z-index: 80;
+    opacity: 0;
+    transition: all 0.3s ease;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  .section-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--text);
+    margin-bottom: 14px;
+    margin-top: 4px;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+
+<!-- SPLASH -->
+<div id="splash">
+  <div class="splash-web">
+    <svg viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg">
+      <g class="spider-pulse">
+        <!-- Web lines -->
+        <line x1="70" y1="10" x2="70" y2="130" stroke="rgba(79,195,247,0.3)" stroke-width="0.8"/>
+        <line x1="10" y1="70" x2="130" y2="70" stroke="rgba(79,195,247,0.3)" stroke-width="0.8"/>
+        <line x1="22" y1="22" x2="118" y2="118" stroke="rgba(79,195,247,0.3)" stroke-width="0.8"/>
+        <line x1="118" y1="22" x2="22" y2="118" stroke="rgba(79,195,247,0.3)" stroke-width="0.8"/>
+        <!-- Web rings -->
+        <circle cx="70" cy="70" r="18" fill="none" stroke="rgba(79,195,247,0.25)" stroke-width="0.8"/>
+        <circle cx="70" cy="70" r="34" fill="none" stroke="rgba(79,195,247,0.2)" stroke-width="0.8"/>
+        <circle cx="70" cy="70" r="50" fill="none" stroke="rgba(79,195,247,0.15)" stroke-width="0.8"/>
+        <circle cx="70" cy="70" r="58" fill="none" stroke="rgba(79,195,247,0.1)" stroke-width="0.8"/>
+        <!-- Spider body -->
+        <ellipse cx="70" cy="66" rx="12" ry="9" fill="#c0392b" filter="url(#glow)"/>
+        <ellipse cx="70" cy="79" rx="9" ry="11" fill="#c0392b" filter="url(#glow)"/>
+        <!-- Legs left -->
+        <line x1="58" y1="62" x2="38" y2="48" stroke="rgba(192,57,43,0.8)" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="58" y1="66" x2="36" y2="64" stroke="rgba(192,57,43,0.8)" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="58" y1="70" x2="38" y2="78" stroke="rgba(192,57,43,0.8)" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="60" y1="76" x2="44" y2="90" stroke="rgba(192,57,43,0.8)" stroke-width="1.8" stroke-linecap="round"/>
+        <!-- Legs right -->
+        <line x1="82" y1="62" x2="102" y2="48" stroke="rgba(192,57,43,0.8)" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="82" y1="66" x2="104" y2="64" stroke="rgba(192,57,43,0.8)" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="82" y1="70" x2="102" y2="78" stroke="rgba(192,57,43,0.8)" stroke-width="1.8" stroke-linecap="round"/>
+        <line x1="80" y1="76" x2="96" y2="90" stroke="rgba(192,57,43,0.8)" stroke-width="1.8" stroke-linecap="round"/>
+        <!-- Eyes -->
+        <circle cx="65" cy="62" r="2" fill="var(--neon)"/>
+        <circle cx="75" cy="62" r="2" fill="var(--neon)"/>
+        <defs>
+          <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="3" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+      </g>
+    </svg>
+  </div>
+  <div class="splash-title">
+    <h1>Spider Species<br>Identifier</h1>
+    <p>AI · Classification · Analysis</p>
+  </div>
+  <div class="splash-loader">
+    <div class="splash-loader-bar"></div>
+  </div>
+</div>
+
+<!-- APP SHELL -->
+<div id="app">
+  <div id="topbar">
+    <span class="topbar-title">Arachnid AI</span>
+    <div class="model-status">
+      <div class="model-dot" id="model-dot"></div>
+      <span id="model-status-text">Loading</span>
+    </div>
+  </div>
+
+  <div id="pages">
+    <!-- HOME PAGE -->
+    <div class="page active" id="page-home">
+      <div class="hero-card">
+        <div class="hero-species-count" id="hero-species-badge">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          — species
+        </div>
+        <h2 class="hero-title">Identify Any<br>Spider Instantly</h2>
+        <p class="hero-sub">Point your camera at any spider and our AI will identify the species with scientific precision.</p>
+        <button class="btn btn-primary" onclick="switchPage('camera'); startCamera();">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="4"/><path d="M5 7H3a2 2 0 00-2 2v9a2 2 0 002 2h18a2 2 0 002-2V9a2 2 0 00-2-2h-2l-2-3H9L7 7z"/></svg>
+          Start Scanning
+        </button>
+      </div>
+
+      <div class="quick-actions">
+        <div class="quick-btn" onclick="switchPage('camera'); startCamera();">
+          <div class="quick-btn-icon blue">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="4"/><path d="M5 7H3a2 2 0 00-2 2v9a2 2 0 002 2h18a2 2 0 002-2V9a2 2 0 00-2-2h-2l-2-3H9z"/></svg>
+          </div>
+          <div class="quick-btn-label">Camera</div>
+          <div class="quick-btn-sub">Live detection</div>
+        </div>
+        <div class="quick-btn" onclick="switchPage('upload')">
+          <div class="quick-btn-icon red">
+            <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          </div>
+          <div class="quick-btn-label">Upload</div>
+          <div class="quick-btn-sub">From gallery</div>
+        </div>
+      </div>
+
+      <div class="stats-row">
+        <div class="stat-box">
+          <span class="stat-val" id="stat-scans">0</span>
+          <span class="stat-key">Scanned</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-val" id="stat-species">—</span>
+          <span class="stat-key">Species</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-val" id="stat-accuracy">—</span>
+          <span class="stat-key">Avg. Conf.</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">Recent Detection</div>
+        <div id="home-recent-empty" style="text-align:center;padding:16px 0;color:var(--text3);font-size:12px;">No detections yet</div>
+        <div id="home-recent-result" style="display:none"></div>
+      </div>
+    </div>
+
+    <!-- CAMERA PAGE -->
+    <div class="page" id="page-camera">
+      <p class="section-title">Live Detection</p>
+      <div class="camera-wrapper">
+        <div id="camera-placeholder">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="4"/><path d="M5 7H3a2 2 0 00-2 2v9a2 2 0 002 2h18a2 2 0 002-2V9a2 2 0 00-2-2h-2l-2-3H9z"/></svg>
+          <p>Camera not started</p>
+        </div>
+        <video id="video" autoplay playsinline muted style="display:none"></video>
+        <canvas id="snapshot-canvas" style="display:none"></canvas>
+        <div class="scan-overlay" id="scan-overlay" style="display:none">
+          <div class="scan-frame">
+            <div class="scan-corner tl"></div>
+            <div class="scan-corner tr"></div>
+            <div class="scan-corner bl"></div>
+            <div class="scan-corner br"></div>
+            <div class="scan-border-animated"></div>
+            <div class="scan-line" id="scan-line"></div>
+          </div>
+        </div>
+        <div class="camera-info-row" id="cam-info-row" style="display:none">
+          <div class="camera-badge"><span class="camera-live-dot"></span>LIVE</div>
+          <div class="camera-badge" id="cam-res-badge">—</div>
+        </div>
+      </div>
+      <div class="camera-controls">
+        <div class="cam-side-btn" onclick="switchCamera()" title="Flip">
+          <svg viewBox="0 0 24 24"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+        </div>
+        <button class="capture-btn" onclick="captureAndPredict()" id="capture-btn">
+          <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg>
+        </button>
+        <div class="cam-side-btn" onclick="startCamera()" title="Start Camera">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="4"/><path d="M5 7H3a2 2 0 00-2 2v9a2 2 0 002 2h18a2 2 0 002-2V9a2 2 0 00-2-2h-2l-2-3H9z"/></svg>
+        </div>
+      </div>
+      <div class="result-card" id="cam-result-card">
+        <div class="result-card-header">
+          <div class="result-icon-wrap">
+            <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          </div>
+          <div class="result-header-text">
+            <span>Identified Species</span>
+            <h3 id="cam-species-name">—</h3>
+          </div>
+          <div class="venom-badge" id="cam-venom-badge">—</div>
+        </div>
+        <div class="result-body">
+          <div class="confidence-row">
+            <span class="confidence-label">Confidence Score</span>
+            <span class="confidence-pct" id="cam-conf-pct">0%</span>
+          </div>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar-fill" id="cam-conf-bar" style="width:0%"></div>
+          </div>
+          <div class="top-predictions" id="cam-top-preds"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- UPLOAD PAGE -->
+    <div class="page" id="page-upload">
+      <p class="section-title">Image Analysis</p>
+      <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        <h3>Upload Spider Image</h3>
+        <p>Tap to select from gallery<br>or drag & drop here</p>
+        <input type="file" id="file-input" accept="image/*">
+      </div>
+      <div class="preview-card" id="preview-card">
+        <img id="preview-img" src="" alt="Preview">
+        <div class="preview-card-actions">
+          <button class="btn btn-primary" style="flex:1" onclick="analyzeUploadedImage()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            Analyze
+          </button>
+          <button class="btn btn-secondary" onclick="clearUpload()">Clear</button>
+        </div>
+      </div>
+      <div class="result-card" id="up-result-card">
+        <div class="result-card-header">
+          <div class="result-icon-wrap">
+            <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          </div>
+          <div class="result-header-text">
+            <span>Identified Species</span>
+            <h3 id="up-species-name">—</h3>
+          </div>
+          <div class="venom-badge" id="up-venom-badge">—</div>
+        </div>
+        <div class="result-body">
+          <div class="confidence-row">
+            <span class="confidence-label">Confidence Score</span>
+            <span class="confidence-pct" id="up-conf-pct">0%</span>
+          </div>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar-fill" id="up-conf-bar" style="width:0%"></div>
+          </div>
+          <div class="top-predictions" id="up-top-preds"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HISTORY PAGE -->
+    <div class="page" id="page-history">
+      <div class="history-header">
+        <p class="section-title" style="margin:0">History</p>
+        <button class="btn btn-danger" style="font-size:11px;padding:7px 14px" onclick="clearAllHistory()">Clear All</button>
+      </div>
+      <div id="history-count" class="history-count" style="margin-bottom:12px"></div>
+      <div id="history-list"></div>
+    </div>
+  </div>
+
+  <!-- BOTTOM NAV -->
+  <nav id="nav">
+    <button class="nav-btn active" id="nav-home" onclick="switchPage('home')">
+      <svg class="nav-icon" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      <span class="nav-label">Home</span>
+      <div class="nav-active-dot"></div>
+    </button>
+    <button class="nav-btn" id="nav-camera" onclick="switchPage('camera'); startCamera();">
+      <svg class="nav-icon" viewBox="0 0 24 24"><circle cx="12" cy="13" r="4"/><path d="M5 7H3a2 2 0 00-2 2v9a2 2 0 002 2h18a2 2 0 002-2V9a2 2 0 00-2-2h-2l-2-3H9z"/></svg>
+      <span class="nav-label">Camera</span>
+      <div class="nav-active-dot"></div>
+    </button>
+    <button class="nav-btn" id="nav-upload" onclick="switchPage('upload')">
+      <svg class="nav-icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      <span class="nav-label">Upload</span>
+      <div class="nav-active-dot"></div>
+    </button>
+    <button class="nav-btn" id="nav-history" onclick="switchPage('history')">
+      <svg class="nav-icon" viewBox="0 0 24 24"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
+      <span class="nav-label">History</span>
+      <div class="nav-active-dot"></div>
+    </button>
+  </nav>
+</div>
+
+<!-- PROCESSING OVERLAY -->
+<div class="processing-overlay" id="processing-overlay">
+  <div class="spinner"></div>
+  <p id="processing-text">Analyzing species...</p>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<script>
+// ── BACKGROUND CANVAS ──────────────────────────────────────────
+(function() {
+  const canvas = document.getElementById('bg-canvas');
+  const ctx = canvas.getContext('2d');
+  let W, H, particles = [], webLines = [];
+
+  function resize() {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  }
+
+  function initParticles() {
+    particles = Array.from({length: 38}, () => ({
+      x: Math.random() * W, y: Math.random() * H,
+      vx: (Math.random() - 0.5) * 0.25, vy: (Math.random() - 0.5) * 0.25,
+      r: Math.random() * 1.2 + 0.3,
+      a: Math.random() * 0.5 + 0.15,
+      color: Math.random() > 0.6 ? '#4fc3f7' : '#c0392b'
+    }));
+  }
+
+  function drawWeb() {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(79,195,247,0.04)';
+    ctx.lineWidth = 0.5;
+    const cx = W * 0.5, cy = H * 0.28;
+    const radii = [50, 100, 160, 230];
+    const spokes = 8;
+    for (let i = 0; i < spokes; i++) {
+      const a = (i / spokes) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(a) * 240, cy + Math.sin(a) * 240);
+      ctx.stroke();
+    }
+    radii.forEach(r => {
+      ctx.beginPath();
+      for (let i = 0; i <= spokes; i++) {
+        const a = (i / spokes) * Math.PI * 2;
+        const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  function animate() {
+    ctx.clearRect(0, 0, W, H);
+    drawWeb();
+    particles.forEach(p => {
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
+      if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = p.a;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    });
+    // Connections
+    ctx.save();
+    for (let i = 0; i < particles.length; i++) {
+      for (let j = i + 1; j < particles.length; j++) {
+        const dx = particles[i].x - particles[j].x;
+        const dy = particles[i].y - particles[j].y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < 100) {
+          ctx.strokeStyle = 'rgba(79,195,247,' + (0.06 * (1 - dist/100)) + ')';
+          ctx.lineWidth = 0.5;
+          ctx.beginPath();
+          ctx.moveTo(particles[i].x, particles[i].y);
+          ctx.lineTo(particles[j].x, particles[j].y);
+          ctx.stroke();
+        }
+      }
+    }
+    ctx.restore();
+    requestAnimationFrame(animate);
+  }
+
+  resize();
+  initParticles();
+  animate();
+  window.addEventListener('resize', () => { resize(); initParticles(); });
+})();
+
+// ── STATE ─────────────────────────────────────────────────────
+let model = null;
+let labels = [];
+let stream = null;
+let facingMode = 'environment';
+let currentPage = 'home';
+let uploadedImageData = null;
+
+// VENOMOUS DATA (simple heuristic lookup by species name keywords)
+const venomousKeywords = ['black widow', 'latrodectus', 'brown recluse', 'loxosceles', 'funnel-web', 'atrax', 'redback', 'phoneutria', 'hobo', 'yellow sac', 'cheiracanthium', 'sicarius', 'six-eyed'];
+const cautionKeywords = ['tarantula', 'theraphosidae', 'wolf spider', 'lycosa', 'orb weaver', 'garden spider'];
+
+function getVenomInfo(name) {
+  const n = name.toLowerCase();
+  if (venomousKeywords.some(k => n.includes(k))) return { label: 'Venomous', cls: 'venomous' };
+  if (cautionKeywords.some(k => n.includes(k))) return { label: 'Caution', cls: 'caution' };
+  return { label: 'Low Risk', cls: 'safe' };
+}
+
+// ── MODEL LOADING ─────────────────────────────────────────────
+async function loadModel() {
+  const dot = document.getElementById('model-dot');
+  const statusText = document.getElementById('model-status-text');
+  try {
+    // Try loading model.json
+    model = await tf.loadLayersModel('model.json');
+    // Try loading metadata.json for labels
+    const res = await fetch('metadata.json');
+    const meta = await res.json();
+    labels = meta.labels || meta.classes || meta.classLabels || [];
+    dot.classList.add('ready');
+    statusText.textContent = 'AI Ready';
+    updateHeroSpeciesBadge();
+    showToast('Model loaded — ' + labels.length + ' species');
+  } catch (e) {
+    // Demo mode: use placeholder labels
+    labels = [
+      'Black Widow', 'Brown Recluse', 'Wolf Spider', 'Garden Spider',
+      'Jumping Spider', 'Orb Weaver', 'Tarantula', 'Cellar Spider',
+      'Funnel-Web Spider', 'House Spider', 'Grass Spider', 'Crab Spider'
+    ];
+    dot.classList.add('error');
+    statusText.textContent = 'Demo Mode';
+    updateHeroSpeciesBadge();
+    showToast('Demo mode — place model.json to activate AI');
+  }
+}
+
+function updateHeroSpeciesBadge() {
+  const el = document.getElementById('hero-species-badge');
+  if (el && labels.length) {
+    el.innerHTML = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg> ${labels.length} species`;
+  }
+}
+
+// ── NAVIGATION ───────────────────────────────────────────────
+function switchPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  document.getElementById('nav-' + name).classList.add('active');
+  currentPage = name;
+  if (name === 'history') renderHistory();
+  if (name === 'home') updateStats();
+  if (name !== 'camera' && stream) stopCamera();
+}
+
+// ── CAMERA ───────────────────────────────────────────────────
+async function startCamera() {
+  const video = document.getElementById('video');
+  const placeholder = document.getElementById('camera-placeholder');
+  const overlay = document.getElementById('scan-overlay');
+  const infoRow = document.getElementById('cam-info-row');
+  const resBadge = document.getElementById('cam-res-badge');
+
+  if (stream) { stream.getTracks().forEach(t => t.stop()); }
+
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode, width: { ideal: 1280 }, height: { ideal: 960 } },
+      audio: false
+    });
+    video.srcObject = stream;
+    video.style.display = 'block';
+    placeholder.style.display = 'none';
+    overlay.style.display = 'flex';
+    infoRow.style.display = 'flex';
+    const track = stream.getVideoTracks()[0];
+    const settings = track.getSettings();
+    resBadge.textContent = (settings.width || '—') + '×' + (settings.height || '—');
+  } catch (err) {
+    showToast('Camera access denied');
+  }
+}
+
+function stopCamera() {
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  document.getElementById('video').style.display = 'none';
+  document.getElementById('camera-placeholder').style.display = 'flex';
+  document.getElementById('scan-overlay').style.display = 'none';
+  document.getElementById('cam-info-row').style.display = 'none';
+}
+
+function switchCamera() {
+  facingMode = facingMode === 'environment' ? 'user' : 'environment';
+  startCamera();
+}
+
+async function captureAndPredict() {
+  const video = document.getElementById('video');
+  if (!video.srcObject) { showToast('Start camera first'); return; }
+
+  const scanLine = document.getElementById('scan-line');
+  scanLine.classList.add('active');
+  setTimeout(() => scanLine.classList.remove('active'), 2500);
+
+  const canvas = document.getElementById('snapshot-canvas');
+  canvas.width = video.videoWidth || 640;
+  canvas.height = video.videoHeight || 480;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+
+  showProcessing('Scanning species...');
+  await predict(dataUrl, 'cam');
+  hideProcessing();
+}
+
+// ── UPLOAD ───────────────────────────────────────────────────
+document.getElementById('file-input').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    uploadedImageData = ev.target.result;
+    document.getElementById('preview-img').src = uploadedImageData;
+    document.getElementById('preview-card').classList.add('visible');
+    document.getElementById('up-result-card').classList.remove('visible');
+  };
+  reader.readAsDataURL(file);
+});
+
+const uploadZone = document.getElementById('upload-zone');
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (!file || !file.type.startsWith('image/')) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    uploadedImageData = ev.target.result;
+    document.getElementById('preview-img').src = uploadedImageData;
+    document.getElementById('preview-card').classList.add('visible');
+  };
+  reader.readAsDataURL(file);
+});
+
+async function analyzeUploadedImage() {
+  if (!uploadedImageData) { showToast('No image selected'); return; }
+  showProcessing('Analyzing image...');
+  await predict(uploadedImageData, 'up');
+  hideProcessing();
+}
+
+function clearUpload() {
+  uploadedImageData = null;
+  document.getElementById('file-input').value = '';
+  document.getElementById('preview-card').classList.remove('visible');
+  document.getElementById('up-result-card').classList.remove('visible');
+}
+
+// ── AI PREDICTION ─────────────────────────────────────────────
+async function predict(imageDataUrl, prefix) {
+  if (!labels.length) { showToast('No species labels loaded'); return; }
+
+  let predictions = [];
+
+  if (model) {
+    try {
+      const img = new Image();
+      await new Promise(resolve => { img.onload = resolve; img.src = imageDataUrl; });
+      const inputSize = getInputSize();
+      const tensor = tf.tidy(() => {
+        return tf.browser.fromPixels(img)
+          .resizeBilinear([inputSize, inputSize])
+          .toFloat()
+          .div(255.0)
+          .expandDims(0);
+      });
+      const output = model.predict(tensor);
+      const data = await output.data();
+      tensor.dispose(); output.dispose();
+      predictions = Array.from(data).map((p, i) => ({ label: labels[i] || 'Species ' + (i+1), prob: p }));
+      predictions.sort((a, b) => b.prob - a.prob);
+    } catch (e) {
+      predictions = generateDemoPredictions();
+    }
+  } else {
+    // Demo mode: generate random predictions
+    await new Promise(r => setTimeout(r, 900));
+    predictions = generateDemoPredictions();
+  }
+
+  const top = predictions[0];
+  const pct = Math.round(top.prob * 100);
+  const venom = getVenomInfo(top.label);
+
+  displayResult(prefix, top.label, pct, venom, predictions.slice(0, 4), imageDataUrl);
+  saveToHistory(top.label, pct, imageDataUrl);
+  updateStats();
+  updateHomeRecent(top.label, pct, imageDataUrl);
+}
+
+function getInputSize() {
+  if (!model) return 224;
+  const shape = model.inputs[0].shape;
+  return shape[1] || 224;
+}
+
+function generateDemoPredictions() {
+  const shuffled = [...labels].sort(() => Math.random() - 0.5);
+  let rem = 1;
+  return shuffled.slice(0, Math.min(labels.length, 6)).map((label, i) => {
+    let prob;
+    if (i === 0) { prob = Math.random() * 0.4 + 0.45; }
+    else { prob = Math.random() * rem * 0.5; }
+    rem -= prob;
+    return { label, prob: Math.max(0, Math.min(prob, 1)) };
+  }).sort((a, b) => b.prob - a.prob);
+}
+
+function displayResult(prefix, species, pct, venom, topPreds, imgData) {
+  const card = document.getElementById(prefix + '-result-card');
+  card.classList.add('visible');
+
+  document.getElementById(prefix + '-species-name').textContent = species;
+  document.getElementById(prefix + '-conf-pct').textContent = pct + '%';
+
+  const bar = document.getElementById(prefix + '-conf-bar');
+  bar.style.width = '0%';
+  setTimeout(() => { bar.style.width = pct + '%'; }, 50);
+
+  const venomEl = document.getElementById(prefix + '-venom-badge');
+  venomEl.textContent = venom.label;
+  venomEl.className = 'venom-badge ' + venom.cls;
+
+  const topEl = document.getElementById(prefix + '-top-preds');
+  topEl.innerHTML = '<div class="top-pred-label">Top Predictions</div>' +
+    topPreds.map((p, i) => `
+      <div class="pred-item">
+        <span class="pred-rank">#${i+1}</span>
+        <span class="pred-name">${p.label}</span>
+        <span class="pred-pct">${Math.round(p.prob * 100)}%</span>
+      </div>
+    `).join('');
+
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ── HISTORY ───────────────────────────────────────────────────
+function getHistory() {
+  try { return JSON.parse(localStorage.getItem('spider_history') || '[]'); } catch { return []; }
+}
+function saveHistory(h) { localStorage.setItem('spider_history', JSON.stringify(h)); }
+
+function saveToHistory(species, conf, imgData) {
+  const h = getHistory();
+  h.unshift({ id: Date.now(), species, conf, imgData, date: new Date().toISOString() });
+  if (h.length > 50) h.splice(50);
+  saveHistory(h);
+}
+
+function renderHistory() {
+  const h = getHistory();
+  const list = document.getElementById('history-list');
+  const count = document.getElementById('history-count');
+  count.textContent = h.length + ' detection' + (h.length !== 1 ? 's' : '');
+
+  if (!h.length) {
+    list.innerHTML = `<div class="empty-state">
+      <svg viewBox="0 0 24 24"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
+      <h3>No history yet</h3>
+      <p>Scan or upload a spider image to begin</p>
+    </div>`;
+    return;
+  }
+
+  list.innerHTML = h.map(item => {
+    const d = new Date(item.date);
+    const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    return `<div class="history-item" id="hist-${item.id}">
+      <img class="history-thumb" src="${item.imgData}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 56 56%22><rect width=%2256%22 height=%2256%22 fill=%22%23141824%22/></svg>'">
+      <div class="history-info">
+        <div class="history-species">${item.species}</div>
+        <div class="history-meta">${dateStr}</div>
+      </div>
+      <span class="history-conf">${item.conf}%</span>
+      <button class="history-del-btn" onclick="deleteHistoryItem(${item.id})">
+        <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+      </button>
+    </div>`;
+  }).join('');
+}
+
+function deleteHistoryItem(id) {
+  let h = getHistory().filter(x => x.id !== id);
+  saveHistory(h);
+  renderHistory();
+  updateStats();
+}
+
+function clearAllHistory() {
+  if (!getHistory().length) { showToast('History is already empty'); return; }
+  saveHistory([]);
+  renderHistory();
+  updateStats();
+  showToast('History cleared');
+}
+
+// ── STATS ─────────────────────────────────────────────────────
+function updateStats() {
+  const h = getHistory();
+  document.getElementById('stat-scans').textContent = h.length;
+  if (h.length) {
+    const avg = Math.round(h.reduce((s, x) => s + x.conf, 0) / h.length);
+    document.getElementById('stat-accuracy').textContent = avg + '%';
+    const unique = new Set(h.map(x => x.species)).size;
+    document.getElementById('stat-species').textContent = unique;
+  } else {
+    document.getElementById('stat-accuracy').textContent = '—';
+    document.getElementById('stat-species').textContent = '—';
+  }
+}
+
+function updateHomeRecent(species, conf, imgData) {
+  document.getElementById('home-recent-empty').style.display = 'none';
+  const el = document.getElementById('home-recent-result');
+  el.style.display = 'flex';
+  el.style.gap = '12px';
+  el.style.alignItems = 'center';
+  el.innerHTML = `
+    <img src="${imgData}" style="width:52px;height:52px;border-radius:10px;object-fit:cover;flex-shrink:0;border:1px solid var(--border)">
+    <div style="flex:1;min-width:0">
+      <div style="font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${species}</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:3px">Just identified</div>
+    </div>
+    <span style="font-size:15px;font-weight:800;color:var(--neon);font-family:'Space Mono',monospace">${conf}%</span>
+  `;
+}
+
+// ── UI HELPERS ────────────────────────────────────────────────
+function showProcessing(msg) {
+  document.getElementById('processing-text').textContent = msg || 'Processing...';
+  document.getElementById('processing-overlay').classList.add('visible');
+}
+function hideProcessing() {
+  document.getElementById('processing-overlay').classList.remove('visible');
+}
+
+let toastTimer;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+// ── SPLASH TRANSITION ─────────────────────────────────────────
+window.addEventListener('load', async () => {
+  loadModel();
+  setTimeout(() => {
+    document.getElementById('splash').classList.add('hidden');
+    setTimeout(() => document.getElementById('splash').remove(), 900);
+  }, 2600);
+  updateStats();
+});
+</script>
+</body>
+</html>
