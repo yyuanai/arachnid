@@ -1281,9 +1281,9 @@ async function loadModel() {
   const statusText = document.getElementById('model-status-text');
   try {
     // Try loading model.json
-    model = await tf.loadLayersModel('model.json');
+    model = await tf.loadLayersModel('./model.json');
     // Try loading metadata.json for labels
-    const res = await fetch('metadata.json');
+    const res = await fetch('./metadata.json');
     const meta = await res.json();
     labels = meta.labels || meta.classes || meta.classLabels || [];
     dot.classList.add('ready');
